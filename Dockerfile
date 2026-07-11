@@ -1,27 +1,29 @@
 # 编译层
 FROM node:22-alpine AS build-env
 
-# 安装 Yarn (pin a specific Yarn version)
-RUN corepack enable
-RUN corepack prepare yarn@1.22.22 --activate
-
-
+# 注意：原先使用 corepack 下载指定版本的 yarn，但在无法访问 registry.yarnpkg.com 的
+# 构建环境中会失败。此处改用随 Node 自带的 npm 进行依赖安装与构建，行为等价且无需
+# 额外下载包管理器。
 # 设置工作目录
 WORKDIR /app
 
-# 复制 package.json 和 lock 文件，安装依赖
-COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile --production=true && yarn cache clean
+# 复制 package.json，安装生产依赖
+# --ignore-scripts 跳过 postinstall：避免无源码时运行 nuxt prepare，也避免下载 puppeteer 浏览器二进制
+COPY package.json ./
+RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
 
-# 复制源代码
+# 复制源代码（.dockerignore 已排除 node_modules/.output 等）
 COPY . .
+
+# 生成 Nuxt 类型声明（需在源码就绪后执行）
+RUN npx nuxt prepare
 
 # 构建 Nuxt 应用（生成 .output 目录）
 ENV NODE_ENV=production \
     NITRO_KV_DRIVER=fs \
     NITRO_KV_BASE=.data/kv
 
-RUN yarn build
+RUN npm run build
 
 
 # 运行时层
